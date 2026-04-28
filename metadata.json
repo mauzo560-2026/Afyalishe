@@ -1,0 +1,8 @@
+{
+  "name": "Afya-Lishe Smart",
+  "description": "Mfumo wa kisayansi wa tiba ya asili, lishe bora na ushauri wa afya powered by Gemini AI.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
