@@ -1,29 +1,18 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Camera, Image as ImageIcon, Loader2, Sparkles, CheckCircle2, History } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
-
-// Initialization with lazy check
-let aiInstance: any = null;
-const getAI = () => {
-  if (aiInstance) return aiInstance;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  aiInstance = new GoogleGenAI({ apiKey });
-  return aiInstance;
-};
-
+import { Camera, Image as ImageIcon, Loader2, CheckCircle2, History } from 'lucide-react';
 interface ScanResult {
   jina_kiswahili: string;
   jina_kiingereza: string;
   jina_kilatin: string;
   uhakika: number;
-  vitu_vilivyomo: string[]; // Added this
+  vitu_vilivyomo: string[];
   maelezo_mfupi: string;
   faida: { emoji: string; maelezo: string }[];
   magonjwa: string[];
   matumizi_dawa: string[];
   tahadhari: string;
+  hitilafu?: string;
 }
 
 export default function PlantScanner() {
@@ -47,62 +36,60 @@ export default function PlantScanner() {
     if (!image || loading) return;
 
     setLoading(true);
-    const base64Data = image.split(',')[1];
-    const mimeType = image.split(',')[0].split(':')[1].split(';')[0];
-
     try {
-      const ai = getAI();
-      if (!ai) throw new Error("Ufunguo wa API haujapatikana.");
-
-      const prompt = `Chambua picha hii ya mmea wa tiba asilia kwa KINA sana. Usitoe majibu ya jumla (generic). 
-NI LAZIMA 'matumizi_dawa' yawe mahususi kwa mmea huu (mfano: kama ni mizizi, majani, au magome) na jinsi ya kuandaa kwa usahihi kwa ajili ya magonjwa yaliyotajwa.
-
-Jibu kwa muundo huu wa JSON pekee:
-{
-  "jina_kiswahili": "Jina maarufu la mmea",
-  "jina_kiingereza": "Common English Identity",
-  "jina_kilatin": "Full Scientific Name",
-  "uhakika": 98,
-  "vitu_vilivyomo": ["Orodha ya kemikali asili/virutubisho mfano: Flavonoids, Salicin, Essential oils, nk"],
-  "maelezo_mfupi": "Uchambuzi wa kitaalamu wa mmea huu, asili yake, na kwanini una nguvu za kutosha kutibu. Mistari 5-6.",
-  "faida": [
-    {"emoji": "🔬", "maelezo": "Uchambuzi wa kisayansi wa faida ya kwanza"},
-    {"emoji": "🛡️", "maelezo": "Faida ya pili katika mfumo wa kinga"},
-    {"emoji": "🔋", "maelezo": "Faida ya tatu ya kudumu mwilini"}
-  ],
-  "magonjwa": ["Orodha ndefu (5-10) ya magonjwa ambayo mmea huu unashughulikia"],
-  "matumizi_dawa": [
-    "Maelekezo Maalum Hatua ya 1: Jinsi ya kuchagua/kuchuma na kusafisha sehemu inayotumika (mizizi/majani/magome)",
-    "Maelekezo Maalum Hatua ya 2: Jinsi ya kuandaa (mfano: kusuuza, kuchemsha kwenye maji kiasi flani, au kuanika na kisha kusaga)",
-    "Maelekezo Maalum Hatua ya 3: Dozi kamili kulingana na ugonjwa (mfano: vijiko, muda wa kunywa kama kabla ya mlo au baada, na kwa siku ngapi)"
-  ],
-  "tahadhari": "Maelezo ya kina kwa nani hapaswi kutumia na tahadhari wakati wa maandalizi."
-}
-Kama hii si picha ya mmea wa tiba, jibu: {"hitilafu": "Hivyo si picha ya mmea wa tiba asilia. Tafadhali piga picha mmea vizuri."}`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              { inlineData: { data: base64Data, mimeType: mimeType } }
-            ]
-          }
-        ],
+      const response = await fetch('/api/analyze-plant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          image,
+          prompt: `Chambua picha hii ya mmea wa tiba asilia kwa KINA sana. Usitoe majibu ya jumla (generic). 
+ NI LAZIMA 'matumizi_dawa' yawe mahususi kwa mmea huu (mfano: kama ni mizizi, majani, au magome) na jinsi ya kuandaa kwa usahihi kwa ajili ya magonjwa yaliyotajwa.
+ 
+ Jibu kwa muundo huu wa JSON pekee:
+ {
+   "jina_kiswahili": "Jina maarufu la mmea",
+   "jina_kiingereza": "Common English Identity",
+   "jina_kilatin": "Full Scientific Name",
+   "uhakika": 98,
+   "vitu_vilivyomo": ["Orodha ya kemikali asili/virutubisho"],
+   "maelezo_mfupi": "Uchambuzi wa kitaalamu wa mmea huu.",
+   "faida": [
+     {"emoji": "🔬", "maelezo": "Faida 1"},
+     {"emoji": "🛡️", "maelezo": "Faida 2"},
+     {"emoji": "🔋", "maelezo": "Faida 3"}
+   ],
+   "magonjwa": ["Orodha ya magonjwa"],
+   "matumizi_dawa": ["Maelekezo ya kuandaa"],
+   "tahadhari": "Tahadhari za kiafya."
+ }
+ Kama hii si picha ya mmea wa tiba, jibu: {"hitilafu": "Hivyo si picha ya mmea wa tiba asilia. Tafadhali piga picha mmea vizuri."}`
+        })
       });
 
-      let text = response.text || '';
-      text = text.replace(/```json|```/g, '').trim();
-      const data = JSON.parse(text);
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.error === 'MISSING_KEY' || errorData.error === 'API Key missing') {
+          throw new Error("MISSING_KEY");
+        }
+        throw new Error(errorData.error || "Hitilafu imetokea.");
+      }
+
+      const resultData = await response.json();
+      const data = JSON.parse(resultData.text || "{}");
+      
       if (data.hitilafu) {
         alert(data.hitilafu);
       } else {
         setResult(data);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Scan error:', error);
-      alert('Imeshindwa kuchakata picha. Tafadhali hakikisha ufunguo wa API umewekwa au jaribu tena baadae.');
+      
+      if (error.message === 'MISSING_KEY') {
+        alert('⚠️ MSAADA: Ufunguo haujapatikana.\n\nFuata haya:\n1. Nenda kwenye Settings -> Secrets.\n2. Bonyeza "Add secret", jina weka APP_PROJECT_SECRET.\n3. Chagua "AI Studio Free Tier" kisha Piga Save (Apply changes).');
+      } else {
+        alert(`Imeshindwa kuchakata picha.\n\nSababu: ${error.message || 'Hitilafu haijulikani'}`);
+      }
     } finally {
       setLoading(false);
     }

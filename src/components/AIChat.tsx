@@ -1,17 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, Loader2, ChevronLeft, MapPin, User, Phone, Package, ExternalLink } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { GoogleGenAI } from "@google/genai";
-
-// Initialization with lazy check
-let aiInstance: any = null;
-const getAI = () => {
-  if (aiInstance) return aiInstance;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  aiInstance = new GoogleGenAI({ apiKey });
-  return aiInstance;
-};
 
 interface Message {
   role: 'user' | 'model';
@@ -49,45 +38,58 @@ export default function AIChat({ isVisible, onClose }: { isVisible: boolean; onC
     setLoading(true);
 
     try {
-      const ai = getAI() as any;
-      if (!ai) throw new Error("Ufunguo wa API haujapatikana.");
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: newHistory.map(m => ({ role: m.role, parts: m.parts })),
-        config: {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history: newHistory,
           systemInstruction: `Wewe ni Dr. REVO Nutritional expert kutoka JOS Natural Herbs. 
             
             MBINU ZA MAZUNGUMZO (KWA VIPAUMBELE):
             1. MSILIZE MTEJA: Daima anza kwa kumuhimiza mteja aeleze dalili zake kwa undani. Jenga ukaribu na mpe tumaini mteja.
             
             2. USALAMA NA MAKTABA (MUHIMU SANA - FUATA HII):
-               - KAMA TATIZO LA MTEJA haliko kwenye orodha ya dawa za JOS hapa chini, au mteja anataka kuanza na mimea rahisi:
-               - **LAZIMA** umwelekeze arudi kwenye sehemu ya **"Maktaba ya Mimea"** (Plant Library) ndani ya app hii.
-               - Sema: "Kwa tatizo hilo, unaweza kuanza na tiba rahisi ya mimea inayopatikana nyumbani. Tafadhali rudi kwenye **Maktaba ya Mimea** mosi (Kwenye menu ya chini gusa 'Mimea') ili uone maelekezo ya jinsi ya kuitumia."
-
-            3. USHAURI WA KITAALAMU: Jibu maswali kwa ufasaha wa Kiswahili fasaha. Toa ushauri kulingana na lishe na tiba asili.
+               - KAMA TATIZO LA MTEJA haliko kwenye orodha ya dava za JOS, au mteja anataka kuanza na mimea rahisi:
+               - LAZIMA umwelekeze arudi kwenye sehemu ya "Maktaba ya Mimea" ndani ya app hii.
             
-            4. BEI NA MALIPO:
-               - USIRUDIE bei kila wakati. Taja bei pale tu mteja anapoonyesha nia ya kuagiza au akiuliza.
+            3. BEI NA MALIPO:
                - BIDHAA: KIDUME PLUS (130k/65k), MJULUS PRO (110k/60k), Tumbo Relief (100k/60k), Mama Fertile (120k/60k), Bawasiri (100k).
                - Delivery: 10,000/= (Inalipiwa KABLA).
                - Malipo: Lipa Namba 67363327 (JOS NATURAL HERBS).
-
-            5. MWONGOZO WA FOMU: Mteja akitaka dawa, mhimize atumie fomu ya agizo (Gusa icon ya box hapa chini).
-
-            6. BAADA YA AGIZO: Mshukuru mteja kwa jina lake na mhimize atume Screenshot WhatsApp kwa kutumia kitufe cha kijani kitakachotokea.
-
-            7. MWONEKANO: Tumia **Bold**, orodha, na --- kufanya ujumbe uwe nadhifu.`,
-        }
+            
+            4. MWONEKANO: Tumia Bold, orodha, na --- kufanya ujumbe uwe nadhifu.`
+        })
       });
 
-      const text = response.text || 'Samahani, sijapata jibu.';
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.error === 'MISSING_KEY') {
+          throw new Error('MISSING_KEY');
+        }
+        throw new Error(errorData.error || "Hitilafu imetokea.");
+      }
+
+      const result = await response.json();
+      const text = result.text || 'Samahani, sijapata jibu.';
       const modelMessage: Message = { role: 'model', parts: [{ text: text }] };
       setHistory((prev) => [...prev, modelMessage]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error);
-      setHistory((prev) => [...prev, { role: 'model', parts: [{ text: 'Samahani, kuna tatizo la mfumo. Tafadhali jaribu tena baadae.' }] }]);
+      const isMissingKey = !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'undefined' || process.env.GEMINI_API_KEY === '';
+      
+      if (error.message === 'MISSING_KEY') {
+        setHistory((prev) => [...prev, { role: 'model', parts: [{ text: `⚠️ **MSAADA WA HARAKA: UFUNGUO HAUJAPATIKANA**
+        
+Daktari REVO hawezi kuongea bila ufunguo wa mfumo. Fuata hatua hizi 3 rahisi:
+
+1. **Nenda kwenye "Secrets"**: Bonyeza kitufe cha Settings (⚙️) juu kabisa kisha nenda kwenye sehemu ya **Secrets**.
+2. **Ongeza Secret Mpya**: Bonyeza "Add secret", kisha kwenye **Name** andika \`APP_PROJECT_SECRET\`. Upande wa **Value**, chagua ule ufunguo wenye neno **"AI Studio Free Tier"**.
+3. **PIGA SAVE**: Bonyeza kitufe cha bluu kidogo chini kinachosema **"Apply changes"**.
+
+Ukishafanya hivyo, andika "Hodi" hapa chini nianze kukuhudumia!` }] }]);
+      } else {
+        setHistory((prev) => [...prev, { role: 'model', parts: [{ text: `⚠️ **Tatizo la Mfumo:** ${error.message || 'Hitilafu haijulikani'}` }] }]);
+      }
     } finally {
       setLoading(false);
       setTimeout(() => {
